@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Command, CommandInput, CommandItem, CommandList } from './command'
 
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
 describe('CommandInput caret navigation', () => {
   let root: Root | null = null
   let container: HTMLDivElement | null = null
