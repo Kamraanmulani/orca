@@ -149,11 +149,10 @@ describe('parseTestCaseOutline', () => {
     expect(tree[0].line).toBe(5)
   })
 
-  it('handles unbalanced braces in literals inside describe bodies without mis-parenting', () => {
+  it('does not mis-parent children when an options object contains a brace in a literal', () => {
     const content = [
-      'describe("suite with braces in literals", () => {',
-      '  const x = "}";',
-      '  it("child test", () => {});',
+      "describe('suite', { message: '}' }, () => {",
+      "  it('child test', () => {});",
       '});'
     ].join('\n')
     const tree = parseTestCaseOutline(content)
