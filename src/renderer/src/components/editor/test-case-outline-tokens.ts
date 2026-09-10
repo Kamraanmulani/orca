@@ -162,10 +162,24 @@ export function findDescribeBodyBrace(
 
       let b = 1
       let temp = cur + 1
+      const noop = (): void => {}
       while (temp < len && b > 0) {
-        if (code[temp] === '{') {
+        const t = code[temp]
+        if (t === '/' && (code[temp + 1] === '/' || code[temp + 1] === '*')) {
+          temp = skipWhitespaceAndComments(code, temp, len, noop)
+          continue
+        }
+        if (t === "'" || t === '"') {
+          temp = skipQuotedString(code, temp, len, noop)
+          continue
+        }
+        if (t === '`') {
+          temp = skipTemplateLiteral(code, temp, len, noop)
+          continue
+        }
+        if (t === '{') {
           b++
-        } else if (code[temp] === '}') {
+        } else if (t === '}') {
           b--
         }
         temp++

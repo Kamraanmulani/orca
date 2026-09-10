@@ -134,4 +134,31 @@ describe('parseTestCaseOutline', () => {
     expect(tree[0].modifier).toBe('concurrent')
     expect(tree[0].children.map((c) => c.modifier)).toEqual(['concurrent', 'concurrent'])
   })
+
+  it('does not drift line numbers when non-string titles span lines', () => {
+    const content = [
+      'test(',
+      '  dynamicTitle,',
+      '  () => {}',
+      ');',
+      'it("valid test", () => {});'
+    ].join('\n')
+    const tree = parseTestCaseOutline(content)
+    expect(tree).toHaveLength(1)
+    expect(tree[0].title).toBe('valid test')
+    expect(tree[0].line).toBe(5)
+  })
+
+  it('handles unbalanced braces in literals inside describe bodies without mis-parenting', () => {
+    const content = [
+      'describe("suite with braces in literals", () => {',
+      '  const x = "}";',
+      '  it("child test", () => {});',
+      '});'
+    ].join('\n')
+    const tree = parseTestCaseOutline(content)
+    expect(tree).toHaveLength(1)
+    expect(tree[0].children).toHaveLength(1)
+    expect(tree[0].children[0].title).toBe('child test')
+  })
 })

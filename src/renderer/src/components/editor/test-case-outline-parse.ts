@@ -231,6 +231,9 @@ export function parseTestCaseOutline(content: string): TestOutlineNode[] {
             continue
           }
         }
+
+        // Why: failed lookahead advanced line through whitespace/comments; restore so main loop doesn't double count.
+        line = startLine
       }
     }
 
