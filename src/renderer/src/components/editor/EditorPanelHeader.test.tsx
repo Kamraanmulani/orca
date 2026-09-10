@@ -82,6 +82,8 @@ const baseProps = {
   shouldShowMarkdownExportAction: false,
   canExportMarkdownToPdf: false,
   showMarkdownTableOfContents: false,
+  canShowTestSpecOutline: false,
+  showTestSpecOutline: false,
   canShowMarkdownFrontmatterToggle: false,
   markdownFrontmatterVisible: false,
   sideBySide: false,
@@ -94,6 +96,7 @@ const baseProps = {
   onToggleSideBySide: vi.fn(),
   onEditorToggleChange: vi.fn(),
   onToggleMarkdownTableOfContents: vi.fn(),
+  onToggleTestSpecOutline: vi.fn(),
   onToggleMarkdownFrontmatter: vi.fn(),
   onExportMarkdownToPdf: vi.fn()
 } satisfies ComponentProps<typeof EditorPanelHeader>
