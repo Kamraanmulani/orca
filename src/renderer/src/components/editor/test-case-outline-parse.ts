@@ -1,6 +1,14 @@
+import {
+  findDescribeBodyBrace,
+  skipQuotedString,
+  skipTemplateLiteral,
+  skipWhitespaceAndComments,
+  slugTitle
+} from './test-case-outline-tokens'
+
 export type TestOutlineKind = 'describe' | 'it'
 
-export type TestOutlineModifier = 'each' | 'skip' | 'only' | 'todo'
+export type TestOutlineModifier = 'each' | 'skip' | 'only' | 'todo' | 'concurrent'
 
 export type TestOutlineNode = {
   children: TestOutlineNode[]
@@ -13,182 +21,220 @@ export type TestOutlineNode = {
 
 const MAX_TEST_OUTLINE_NODES = 2000
 
-const CALL_RE =
-  /(^|[^\w$.])(describe|it|test)(\.(each|skip|only|todo))*\s*\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`)/
-
-const EACH_CALL_RE =
-  /(^|[^\w$.])(describe|it|test)(\.(each|skip|only|todo))*\s*\([^)]*\)\s*\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`)/
-
-function matchTestCall(code: string): {
-  kind: TestOutlineKind
-  modifier?: TestOutlineModifier
-  title: string
-} | null {
-  const direct = CALL_RE.exec(code)
-  // Why: test.each(data)(title) carries the title in a second call — retry there.
-  const match = direct ?? EACH_CALL_RE.exec(code)
-  if (!match) {
-    return null
-  }
-  const modifier = /\.(each|skip|only|todo)(?=\.|$|\s*\()/.exec(match[3] ?? '')?.at(1) as
-    | TestOutlineModifier
-    | undefined
-  return {
-    kind: match[2] === 'describe' ? 'describe' : 'it',
-    modifier,
-    title: match[5] ?? match[6] ?? match[7] ?? ''
-  }
-}
-
-// Why: a title containing `it(` inside a comment must not become a node.
-function stripLineComment(line: string): string {
-  let inSingle = false
-  let inDouble = false
-  let inTemplate = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === '\\') {
-      i++
-      continue
-    }
-    if (!inSingle && !inDouble && !inTemplate && ch === '/' && line[i + 1] === '/') {
-      return line.slice(0, i)
-    }
-    if (!inDouble && !inTemplate && ch === "'") {
-      inSingle = !inSingle
-    } else if (!inSingle && !inTemplate && ch === '"') {
-      inDouble = !inDouble
-    } else if (!inSingle && !inDouble && ch === '`') {
-      inTemplate = !inTemplate
-    }
-  }
-  return line
-}
-
-function slugTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-}
-
-function countBraces(line: string): number {
-  let delta = 0
-  let inSingle = false
-  let inDouble = false
-  let inTemplate = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === '\\') {
-      i++
-      continue
-    }
-    if (!inSingle && !inDouble && !inTemplate) {
-      if (ch === "'") {
-        inSingle = true
-      } else if (ch === '"') {
-        inDouble = true
-      } else if (ch === '`') {
-        inTemplate = true
-      } else if (ch === '{') {
-        delta++
-      } else if (ch === '}') {
-        delta--
-      }
-      continue
-    }
-    if (inSingle && ch === "'") {
-      inSingle = false
-    } else if (inDouble && ch === '"') {
-      inDouble = false
-    } else if (inTemplate && ch === '`') {
-      inTemplate = false
-    }
-  }
-  return delta
-}
-
+// Why: stateful scanner skips literals/comments so multiline calls, tagged .each, and nested suites parse statically without execution.
+/**
+ * Parses test specification source code into a hierarchical outline tree.
+ */
 export function parseTestCaseOutline(content: string): TestOutlineNode[] {
   const normalized = content.replace(/\r\n/g, '\n')
-  const lines = normalized.split('\n')
+  const len = normalized.length
   const roots: TestOutlineNode[] = []
-  const stack: { depth: number; node: TestOutlineNode }[] = []
+  const stack: { scopeDepth: number; node: TestOutlineNode }[] = []
   let depth = 0
-  let inBlockComment = false
+  let line = 1
+  let i = 0
   let nodeCount = 0
   const seenIds = new Set<string>()
+  const incLine = (): void => {
+    line++
+  }
 
-  for (let index = 0; index < lines.length; index++) {
-    let line = lines.at(index) ?? ''
-    if (inBlockComment) {
-      const end = line.indexOf('*/')
-      if (end === -1) {
-        continue
-      }
-      line = line.slice(end + 2)
-      inBlockComment = false
+  function addNode(
+    kind: TestOutlineKind,
+    modifier: TestOutlineModifier | undefined,
+    title: string,
+    nodeLine: number
+  ): TestOutlineNode | null {
+    if (nodeCount >= MAX_TEST_OUTLINE_NODES) {
+      return null
     }
-    const blockStart = line.indexOf('/*')
-    if (blockStart !== -1) {
-      const blockEnd = line.indexOf('*/', blockStart + 2)
-      if (blockEnd === -1) {
-        line = line.slice(0, blockStart)
-        inBlockComment = true
-      } else {
-        line = line.slice(0, blockStart) + line.slice(blockEnd + 2)
-      }
+    const trimmed = title.trim()
+    if (!trimmed) {
+      return null
     }
 
-    const code = stripLineComment(line)
-    const parsed = matchTestCall(code)
-    if (parsed && nodeCount < MAX_TEST_OUTLINE_NODES) {
-      const title = parsed.title.trim()
-      if (title) {
-        const lineNo = index + 1
-        const slug = slugTitle(title) || 'test'
-        let id = `${lineNo}-${slug}`
-        let suffix = 2
-        while (seenIds.has(id)) {
-          id = `${lineNo}-${slug}-${suffix}`
-          suffix++
-        }
-        seenIds.add(id)
-        const node: TestOutlineNode = {
-          children: [],
-          id,
-          kind: parsed.kind,
-          line: lineNo,
-          modifier: parsed.modifier,
-          title
-        }
-        while (stack.length > 0 && (stack.at(-1)?.depth ?? 0) >= depth) {
-          stack.pop()
-        }
-        // Why: its attach to the nearest open describe; describes nest only under describes.
-        const parent = stack.at(-1)?.node ?? null
-        if (parsed.kind === 'describe' && (parent === null || parent.kind === 'describe')) {
-          if (parent === null) {
-            roots.push(node)
+    const slug = slugTitle(trimmed) || 'test'
+    let id = `${nodeLine}-${slug}`
+    let suffix = 2
+    while (seenIds.has(id)) {
+      id = `${nodeLine}-${slug}-${suffix}`
+      suffix++
+    }
+    seenIds.add(id)
+
+    const node: TestOutlineNode = {
+      children: [],
+      id,
+      kind,
+      line: nodeLine,
+      modifier,
+      title: trimmed
+    }
+
+    const parent = stack.length > 0 ? (stack.at(-1)?.node ?? null) : null
+    if (parent === null) {
+      roots.push(node)
+    } else {
+      parent.children.push(node)
+    }
+    nodeCount++
+    return node
+  }
+
+  while (i < len) {
+    const ch = normalized[i]
+
+    if (ch === '\n') {
+      line++
+      i++
+      continue
+    }
+    if (ch === '/' && (normalized[i + 1] === '/' || normalized[i + 1] === '*')) {
+      i = skipWhitespaceAndComments(normalized, i, len, incLine)
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      i = skipQuotedString(normalized, i, len, incLine)
+      continue
+    }
+    if (ch === '`') {
+      i = skipTemplateLiteral(normalized, i, len, incLine)
+      continue
+    }
+    if (ch === '{') {
+      depth++
+      i++
+      continue
+    }
+    if (ch === '}') {
+      depth = Math.max(0, depth - 1)
+      while (stack.length > 0 && (stack.at(-1)?.scopeDepth ?? 0) > depth) {
+        stack.pop()
+      }
+      i++
+      continue
+    }
+
+    const prev = i > 0 ? normalized[i - 1] : ' '
+    if (!/[\w$.]/.test(prev)) {
+      let callKind: TestOutlineKind | null = null
+      let idLen = 0
+
+      if (normalized.startsWith('describe', i) && !/[\w$]/.test(normalized[i + 8] || '')) {
+        callKind = 'describe'
+        idLen = 8
+      } else if (normalized.startsWith('it', i) && !/[\w$]/.test(normalized[i + 2] || '')) {
+        callKind = 'it'
+        idLen = 2
+      } else if (normalized.startsWith('test', i) && !/[\w$]/.test(normalized[i + 4] || '')) {
+        callKind = 'it'
+        idLen = 4
+      }
+
+      if (callKind) {
+        const startLine = line
+        let cur = i + idLen
+        let modifier: TestOutlineModifier | undefined = undefined
+        let isEach = false
+
+        while (cur < len && normalized[cur] === '.') {
+          cur++
+          const modMatch = /^(each|skip|only|todo|concurrent)\b/.exec(normalized.slice(cur))
+          if (modMatch) {
+            const mod = modMatch[1] as TestOutlineModifier
+            if (mod === 'each') {
+              isEach = true
+            }
+            if (
+              !modifier ||
+              modifier === 'each' ||
+              (modifier === 'concurrent' && (mod === 'only' || mod === 'skip' || mod === 'todo'))
+            ) {
+              modifier = mod
+            }
+            cur += mod.length
           } else {
-            parent.children.push(node)
+            break
           }
-          stack.push({ depth, node })
-        } else if (parsed.kind === 'describe') {
-          roots.push(node)
-          stack.push({ depth, node })
-        } else if (parent === null) {
-          roots.push(node)
-        } else {
-          parent.children.push(node)
         }
-        nodeCount++
+
+        cur = skipWhitespaceAndComments(normalized, cur, len, incLine)
+
+        if (isEach) {
+          if (normalized[cur] === '`') {
+            cur = skipTemplateLiteral(normalized, cur, len, incLine)
+          } else if (normalized[cur] === '(') {
+            cur++
+            let parenDepth = 1
+            while (cur < len && parenDepth > 0) {
+              const pCh = normalized[cur]
+              if (pCh === '(') {
+                parenDepth++
+              } else if (pCh === ')') {
+                parenDepth--
+              } else if (pCh === '\n') {
+                line++
+              } else if (pCh === "'" || pCh === '"') {
+                cur = skipQuotedString(normalized, cur, len, incLine)
+                continue
+              } else if (pCh === '`') {
+                cur = skipTemplateLiteral(normalized, cur, len, incLine)
+                continue
+              }
+              cur++
+            }
+          }
+          cur = skipWhitespaceAndComments(normalized, cur, len, incLine)
+        }
+
+        if (cur < len && normalized[cur] === '(') {
+          cur++
+          cur = skipWhitespaceAndComments(normalized, cur, len, incLine)
+
+          if (
+            cur < len &&
+            (normalized[cur] === '"' || normalized[cur] === "'" || normalized[cur] === '`')
+          ) {
+            const quote = normalized[cur]
+            cur++
+            let title = ''
+            while (cur < len && normalized[cur] !== quote) {
+              if (normalized[cur] === '\\') {
+                cur++
+                if (cur < len) {
+                  title += normalized[cur]
+                }
+              } else {
+                if (normalized[cur] === '\n') {
+                  line++
+                }
+                title += normalized[cur]
+              }
+              cur++
+            }
+            if (cur < len) {
+              cur++
+            }
+
+            const node = addNode(callKind, modifier, title, startLine)
+
+            if (callKind === 'describe' && node) {
+              const body = findDescribeBodyBrace(normalized, cur, len, incLine)
+              cur = body.next
+              if (body.foundBody) {
+                depth++
+                stack.push({ scopeDepth: depth, node })
+              }
+            }
+
+            i = cur
+            continue
+          }
+        }
       }
     }
-    depth = Math.max(0, depth + countBraces(code))
-    while (stack.length > 0 && (stack.at(-1)?.depth ?? 0) >= depth) {
-      stack.pop()
-    }
+
+    i++
   }
 
   return roots

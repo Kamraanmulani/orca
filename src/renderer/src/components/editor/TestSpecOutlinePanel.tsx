@@ -34,11 +34,7 @@ function TestOutlineRow({
 }): React.JSX.Element {
   const hasChildren = item.children.length > 0
   const expanded = isTestOutlineItemExpanded(collapsedIds, item)
-  const rowPaddingLeft = hasChildren
-    ? depth === 0
-      ? OUTLINE_INDENT_BASE_PX
-      : depth * OUTLINE_INDENT_STEP_PX
-    : OUTLINE_INDENT_BASE_PX + depth * OUTLINE_INDENT_STEP_PX
+  const rowPaddingLeft = OUTLINE_INDENT_BASE_PX + depth * OUTLINE_INDENT_STEP_PX
 
   return (
     <>
@@ -91,9 +87,9 @@ function TestOutlineRow({
               item.modifier === 'only' && 'font-semibold'
             )}
           >
-            {item.kind === 'it' && item.modifier === 'each' ? `${item.title} ×` : item.title}
+            {item.title}
           </span>
-          {item.modifier === 'skip' || item.modifier === 'todo' ? (
+          {item.modifier ? (
             <span className="ml-1 shrink-0 text-[10px] text-muted-foreground">{item.modifier}</span>
           ) : null}
         </button>
@@ -114,6 +110,9 @@ function TestOutlineRow({
   )
 }
 
+/**
+ * Renders a collapsible outline panel for navigating test cases within spec files.
+ */
 export function TestSpecOutlinePanel({
   items,
   onClose,

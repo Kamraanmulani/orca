@@ -1,5 +1,8 @@
 import type { TestOutlineNode } from './test-case-outline-parse'
 
+/**
+ * Collects IDs of all outline nodes that contain child test cases.
+ */
 export function collectTestOutlineParentIds(items: TestOutlineNode[]): Set<string> {
   const parentIds = new Set<string>()
 
@@ -16,6 +19,9 @@ export function collectTestOutlineParentIds(items: TestOutlineNode[]): Set<strin
   return parentIds
 }
 
+/**
+ * Prunes collapsed node IDs that no longer exist in the current outline tree.
+ */
 export function pruneTestOutlineCollapsedIds(
   collapsedIds: ReadonlySet<string>,
   items: TestOutlineNode[]
@@ -30,6 +36,9 @@ export function pruneTestOutlineCollapsedIds(
   return next
 }
 
+/**
+ * Toggles a test outline item's collapsed state.
+ */
 export function toggleTestOutlineCollapsedId(
   collapsedIds: ReadonlySet<string>,
   id: string
@@ -43,6 +52,9 @@ export function toggleTestOutlineCollapsedId(
   return next
 }
 
+/**
+ * Returns whether an outline item is currently expanded in the tree view.
+ */
 export function isTestOutlineItemExpanded(
   collapsedIds: ReadonlySet<string>,
   item: TestOutlineNode

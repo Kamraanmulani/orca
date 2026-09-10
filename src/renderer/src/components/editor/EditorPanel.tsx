@@ -345,7 +345,7 @@ function EditorPanelInner({
         model={model}
         copiedPathVisible={copiedPathToast?.fileId === activeFile.id}
         showMarkdownTableOfContents={isMarkdownTableOfContentsVisible}
-        showTestSpecOutline={isTestSpecOutlineVisible}
+        showTestSpecOutline={model.canShowTestSpecOutline && isTestSpecOutlineVisible}
         canShowMarkdownFrontmatterToggle={canShowMarkdownFrontmatterToggle}
         markdownFrontmatterVisible={isMarkdownFrontmatterVisible}
         sideBySide={sideBySide}

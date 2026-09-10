@@ -141,4 +141,17 @@ describe('EditorPanelHeader', () => {
       })
     ).not.toContain('data-artifact-publish')
   })
+
+  it('renders test outline toggle button only when eligible', () => {
+    expect(renderHeader({ canShowTestSpecOutline: false })).not.toContain(
+      'aria-label="Test Outline"'
+    )
+
+    const enabledHtml = renderHeader({
+      canShowTestSpecOutline: true,
+      showTestSpecOutline: true
+    })
+    expect(enabledHtml).toContain('aria-label="Test Outline"')
+    expect(enabledHtml).toContain('aria-pressed="true"')
+  })
 })
